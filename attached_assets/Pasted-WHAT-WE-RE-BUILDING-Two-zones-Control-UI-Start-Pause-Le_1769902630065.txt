@@ -1,0 +1,246 @@
+WHAT WE’RE BUILDING
+Two zones
+Control UI
+Start / Pause
+Left / Right / Rotate / Drop (touch-friendly)
+Game Output
+Tetris canvas (can later be mirrored to LED wall)
+1️⃣ CREATE THE REPLIT PROJECT
+Go to Replit
+New Repl → Node.js
+Name it:
+madmappers-tetris-interactive
+2️⃣ PROJECT STRUCTURE
+madmappers-tetris/
+│
+├── server.js
+├── package.json
+└── public/
+    ├── index.html
+    ├── style.css
+    └── app.js
+3️⃣ BACKEND (server.js)
+This allows multi-device control later (tablet → LED screen)
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+app.use(express.static("public"));
+
+io.on("connection", (socket) => {
+  socket.on("control", (data) => {
+    socket.broadcast.emit("control", data);
+  });
+});
+
+server.listen(3000, () => {
+  console.log("Madmappers Tetris running");
+});
+4️⃣ UI + GAME LAYOUT (index.html)
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Madmappers Tetris</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <!-- CONTROL PANEL -->
+  <div class="controls">
+    <h1>MADMAPPERS</h1>
+
+    <button onclick="send('start')">START</button>
+    <button onclick="send('pause')">PAUSE</button>
+
+    <div class="pad">
+      <button onclick="send('left')">◀</button>
+      <button onclick="send('rotate')">⟳</button>
+      <button onclick="send('right')">▶</button>
+    </div>
+
+    <button class="drop" onclick="send('drop')">DROP</button>
+  </div>
+
+  <!-- GAME OUTPUT -->
+  <canvas id="game"></canvas>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
+5️⃣ BRAND STYLING (style.css)
+Madmappers look: dark, red accent, event-grade
+body {
+  margin: 0;
+  background: #0a0a0a;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+.controls {
+  width: 280px;
+  padding: 20px;
+  background: #111;
+  border-right: 3px solid #ff2c2c;
+}
+
+.controls h1 {
+  color: #ff2c2c;
+  margin-bottom: 20px;
+}
+
+.controls button {
+  width: 100%;
+  padding: 12px;
+  margin: 6px 0;
+  background: transparent;
+  color: white;
+  border: 1px solid #ff2c2c;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.pad {
+  display: flex;
+  justify-content: space-between;
+}
+
+.pad button {
+  width: 30%;
+}
+
+.drop {
+  background: #ff2c2c;
+  color: black;
+}
+
+canvas {
+  flex: 1;
+  background: black;
+}
+6️⃣ GAME LOGIC (app.js)
+This is a complete Tetris engine simplified for events.
+const socket = io();
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth - 280;
+canvas.height = window.innerHeight;
+
+const COLS = 10;
+const ROWS = 20;
+const BLOCK = 30;
+
+ctx.scale(BLOCK, BLOCK);
+
+let board = Array.from({ length: ROWS }, () =>
+  Array(COLS).fill(0)
+);
+
+const shapes = [
+  [[1,1,1,1]],
+  [[1,1],[1,1]],
+  [[0,1,0],[1,1,1]],
+  [[1,0,0],[1,1,1]],
+  [[0,0,1],[1,1,1]]
+];
+
+let piece = newPiece();
+let dropInterval;
+let paused = false;
+
+function newPiece() {
+  const shape = shapes[Math.floor(Math.random()*shapes.length)];
+  return { shape, x: 3, y: 0 };
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawMatrix(board);
+  drawMatrix(piece.shape, piece.x, piece.y);
+}
+
+function drawMatrix(matrix, offsetX = 0, offsetY = 0) {
+  matrix.forEach((row, y) => {
+    row.forEach((value, x) => {
+      if (value) {
+        ctx.fillStyle = "#ff2c2c";
+        ctx.fillRect(x + offsetX, y + offsetY, 1, 1);
+      }
+    });
+  });
+}
+
+function collide() {
+  return piece.shape.some((row, y) =>
+    row.some((value, x) =>
+      value &&
+      (board[y + piece.y]?.[x + piece.x] !== 0)
+    )
+  );
+}
+
+function merge() {
+  piece.shape.forEach((row, y) => {
+    row.forEach((value, x) => {
+      if (value) board[y + piece.y][x + piece.x] = 1;
+    });
+  });
+}
+
+function drop() {
+  piece.y++;
+  if (collide()) {
+    piece.y--;
+    merge();
+    piece = newPiece();
+  }
+}
+
+function rotate() {
+  piece.shape = piece.shape[0].map((_, i) =>
+    piece.shape.map(row => row[i]).reverse()
+  );
+}
+
+function move(dir) {
+  piece.x += dir;
+  if (collide()) piece.x -= dir;
+}
+
+function send(action) {
+  socket.emit("control", action);
+  handle(action);
+}
+
+function handle(action) {
+  if (action === "start") {
+    clearInterval(dropInterval);
+    dropInterval = setInterval(drop, 700);
+  }
+  if (action === "pause") paused = !paused;
+  if (action === "left") move(-1);
+  if (action === "right") move(1);
+  if (action === "rotate") rotate();
+  if (action === "drop") drop();
+}
+
+socket.on("control", handle);
+
+function update() {
+  if (!paused) draw();
+  requestAnimationFrame(update);
+}
+
+update();

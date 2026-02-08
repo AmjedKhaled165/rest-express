@@ -1,0 +1,21 @@
+name: Build DMG
+on: [push]
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v3
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: Build DMG
+        run: npm run electron:build
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: MacOS-Installer
+          path: dist-mac/*.dmg
